@@ -8,6 +8,7 @@ import { ArrowLeft, Download, ImageIcon, Loader2, FileDown } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
 import { getSignedImageUrl } from "@/lib/supabase/images"
 import Link from "next/link"
+import { jsPDF } from "jspdf"
 
 export default function PreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
@@ -48,15 +49,24 @@ export default function PreviewPage({ params }: { params: Promise<{ id: string }
     setError(null)
 
     try {
-      if (!canvasRef.current || !photo) return
+      if (!canvasRef.current || !imageUrl) return
 
       const canvas = canvasRef.current
       const ctx = canvas.getContext("2d")
       if (!ctx) return
 
-      // Set canvas size for A4 at 300 DPI (3508 x 2480 px for landscape)
-      canvas.width = 3508
-      canvas.height = 2480
+      // PDF dimensions in mm (A4 landscape)
+      const pdfWidthMM = 297
+      const pdfHeightMM = 210
+      
+      // Convert to pixels at 300 DPI (1 inch = 25.4mm, 300 DPI = 11.81 pixels per mm)
+      const pixelsPerMM = 300 / 25.4
+      const canvasWidth = pdfWidthMM * pixelsPerMM
+      const canvasHeight = pdfHeightMM * pixelsPerMM
+
+      // Set canvas size matching PDF dimensions
+      canvas.width = canvasWidth
+      canvas.height = canvasHeight
 
       // White background
       ctx.fillStyle = "#ffffff"
@@ -69,70 +79,97 @@ export default function PreviewPage({ params }: { params: Promise<{ id: string }
       await new Promise((resolve, reject) => {
         img.onload = resolve
         img.onerror = reject
-        img.src = imageUrl || "/placeholder.svg"
+        img.src = imageUrl
       })
 
-      // Calculate frame sizes in pixels (at 300 DPI: 1 cm = 118.11 pixels)
-      const DPI = 118.11
-      const frames = [
-        { width: 120 * DPI, height: 80 * DPI, label: "120cm × 80cm" },
-        { width: 90 * DPI, height: 60 * DPI, label: "90cm × 60cm" },
-        { width: 60 * DPI, height: 40 * DPI, label: "60cm × 40cm" },
-      ]
+      // Calculate frame sizes to fill the entire page
+      const frameAspectRatio = 3 / 2 // 120:80 = 90:60 = 60:40 = 3:2
+      
+      // Largest frame (120×80cm) - fills entire canvas
+      const largeFrame = { 
+        width: canvasWidth, 
+        height: canvasHeight 
+      }
+      
+      // Medium frame (90×60cm) - 75% of large frame (90/120 = 0.75)
+      const mediumFrame = { 
+        width: largeFrame.width * 0.75, 
+        height: largeFrame.height * 0.75 
+      }
+      
+      // Small frame (60×40cm) - 66.67% of medium frame (60/90 = 0.6667)
+      const smallFrame = { 
+        width: mediumFrame.width * (2/3), 
+        height: mediumFrame.height * (2/3) 
+      }
 
-      // Calculate positions for nested frames (centered)
-      const largeFrame = frames[0]
-      const mediumFrame = frames[1]
-      const smallFrame = frames[2]
+      // Start position for the largest frame (no margins, fills entire page)
+      const startX = 0
+      const startY = 0
 
-      // Start position for the largest frame (centered on canvas)
-      const startX = (canvas.width - largeFrame.width) / 2
-      const startY = (canvas.height - largeFrame.height) / 2
-
-      // Draw largest frame border
-      ctx.strokeStyle = "#333333"
-      ctx.lineWidth = 8
+      // Draw largest frame border (120×80cm) - full page
+      ctx.strokeStyle = "#1e293b" // slate-800
+      ctx.lineWidth = 2
       ctx.strokeRect(startX, startY, largeFrame.width, largeFrame.height)
 
-      // Draw medium frame (centered in large frame)
+      // Calculate position for medium frame (centered in large frame)
+      // Medium frame is 75% of large frame
       const medX = startX + (largeFrame.width - mediumFrame.width) / 2
       const medY = startY + (largeFrame.height - mediumFrame.height) / 2
+
+      // Draw medium frame border (90×60cm)
+      ctx.strokeStyle = "#334155" // slate-700
+      ctx.lineWidth = 2
       ctx.strokeRect(medX, medY, mediumFrame.width, mediumFrame.height)
 
-      // Draw image in medium frame
-      ctx.drawImage(img, medX + 4, medY + 4, mediumFrame.width - 8, mediumFrame.height - 8)
+      // Draw image in medium frame (with small padding)
+      const imagePadding = 2
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(medX + imagePadding, medY + imagePadding, mediumFrame.width - imagePadding * 2, mediumFrame.height - imagePadding * 2)
+      ctx.clip()
+      ctx.drawImage(img, medX + imagePadding, medY + imagePadding, mediumFrame.width - imagePadding * 2, mediumFrame.height - imagePadding * 2)
+      ctx.restore()
 
-      // Draw small frame (centered in medium frame)
+      // Calculate position for small frame (centered in medium frame)
+      // Small frame is 66.67% of medium frame
       const smallX = medX + (mediumFrame.width - smallFrame.width) / 2
       const smallY = medY + (mediumFrame.height - smallFrame.height) / 2
+
+      // Draw small frame border (60×40cm)
+      ctx.strokeStyle = "#475569" // slate-600
+      ctx.lineWidth = 2
       ctx.strokeRect(smallX, smallY, smallFrame.width, smallFrame.height)
 
-      // Draw image in small frame
-      ctx.drawImage(img, smallX + 4, smallY + 4, smallFrame.width - 8, smallFrame.height - 8)
+      // Draw image in small frame (with small padding, sobrepuesta)
+      ctx.save()
+      ctx.beginPath()
+      ctx.rect(smallX + imagePadding, smallY + imagePadding, smallFrame.width - imagePadding * 2, smallFrame.height - imagePadding * 2)
+      ctx.clip()
+      ctx.drawImage(img, smallX + imagePadding, smallY + imagePadding, smallFrame.width - imagePadding * 2, smallFrame.height - imagePadding * 2)
+      ctx.restore()
 
-      // Add labels
-      ctx.fillStyle = "#333333"
-      ctx.font = "bold 48px sans-serif"
+      // Convert canvas to image data URL
+      const imageDataUrl = canvas.toDataURL("image/png", 1.0)
 
-      ctx.fillText(frames[0].label, startX + 20, startY + 70)
-      ctx.fillText(frames[1].label, medX + 20, medY + 70)
-      ctx.fillText(frames[2].label, smallX + 20, smallY + 70)
+      // Create PDF (A4 landscape: 297mm x 210mm)
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      })
 
-      // Convert canvas to blob and download
-      canvas.toBlob((blob) => {
-        if (!blob) return
+      // Calculate dimensions for PDF (A4 landscape: 297mm x 210mm)
+      const pdfWidth = 297
+      const pdfHeight = 210
 
-        const url = URL.createObjectURL(blob)
-        const a = document.createElement("a")
-        a.href = url
-        a.download = `frame-preview-${Date.now()}.png`
-        document.body.appendChild(a)
-        a.click()
-        document.body.removeChild(a)
-        URL.revokeObjectURL(url)
+      // Add image to PDF (full page)
+      pdf.addImage(imageDataUrl, "PNG", 0, 0, pdfWidth, pdfHeight, undefined, "FAST")
 
-        setIsGenerating(false)
-      }, "image/png")
+      // Save PDF
+      pdf.save(`frame-preview-${Date.now()}.pdf`)
+
+      setIsGenerating(false)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al generar PDF")
       setIsGenerating(false)
@@ -209,23 +246,44 @@ export default function PreviewPage({ params }: { params: Promise<{ id: string }
               <div className="border-t pt-6">
                 <h3 className="text-lg font-semibold mb-4">Vista Comparativa</h3>
                 <div className="bg-white p-8 rounded-lg border-2 border-slate-200">
-                  <div className="relative mx-auto" style={{ maxWidth: "800px" }}>
-                    <div className="border-8 border-slate-800 rounded-lg p-4 relative">
-                      <div className="absolute top-2 left-2 bg-white px-3 py-1 rounded text-sm font-semibold shadow">
-                        120×80cm
-                      </div>
-                      <div className="border-6 border-slate-700 rounded-lg p-3 relative">
-                        <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded text-xs font-semibold shadow">
-                          90×60cm
+                  <div className="relative mx-auto" style={{ maxWidth: "900px" }}>
+                    {/* Contenedor principal con relación 3:2 */}
+                    <div className="relative" style={{ aspectRatio: "3/2" }}>
+                      {/* Cuadro exterior: 120x80cm */}
+                      <div className="absolute inset-0 border-2 border-slate-800 rounded-sm flex items-center justify-center">
+                        <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded text-xs font-semibold text-slate-800 shadow-sm">
+                          120×80cm
                         </div>
-                        <img
-                          src={imageUrl || "/placeholder.svg"}
-                          alt="Nested frames"
-                          className="w-full h-auto rounded"
-                        />
-                        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-                          <div className="border-4 border-slate-600 rounded-lg w-2/3 h-2/3 flex items-center justify-center">
-                            <div className="bg-white px-2 py-1 rounded text-xs font-semibold shadow">60×40cm</div>
+                        
+                        {/* Cuadro medio: 90x60cm (75% del tamaño del exterior) */}
+                        <div className="relative border-2 border-slate-700 rounded-sm" style={{ width: "75%", height: "75%", aspectRatio: "3/2" }}>
+                          <div className="absolute top-1 left-1 bg-white px-2 py-0.5 rounded text-xs font-semibold text-slate-700 shadow-sm">
+                            90×60cm
+                          </div>
+                          
+                          {/* Imagen dentro del cuadro de 90x60cm */}
+                          <div className="absolute inset-0 overflow-hidden rounded-sm" style={{ margin: "2px" }}>
+                            <img
+                              src={imageUrl || "/placeholder.svg"}
+                              alt="90x60cm frame"
+                              className="w-full h-full object-cover"
+                            />
+                          </div>
+                          
+                          {/* Cuadro interior: 60x40cm (66.67% del tamaño del medio, centrado) */}
+                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 border-2 border-slate-600 rounded-sm" style={{ width: "66.67%", height: "66.67%", aspectRatio: "3/2" }}>
+                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white px-1.5 py-0.5 rounded text-xs font-semibold text-slate-600 shadow-sm whitespace-nowrap">
+                              60×40cm
+                            </div>
+                            
+                            {/* Imagen dentro del cuadro de 60x40cm (sobrepuesta) */}
+                            <div className="absolute inset-0 overflow-hidden rounded-sm" style={{ margin: "2px" }}>
+                              <img
+                                src={imageUrl || "/placeholder.svg"}
+                                alt="60x40cm frame"
+                                className="w-full h-full object-cover"
+                              />
+                            </div>
                           </div>
                         </div>
                       </div>

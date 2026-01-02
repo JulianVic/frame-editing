@@ -13,10 +13,10 @@ export default async function DashboardPage() {
     redirect("/auth/login")
   }
 
-  // Get user's photos
+  // Get user's photos (including Topaz fields)
   const { data: photos } = await supabase
     .from("photos")
-    .select("*")
+    .select("*, topaz_gigapixel_url, topaz_status")
     .eq("user_id", data.user.id)
     .order("created_at", { ascending: false })
 
@@ -62,15 +62,47 @@ export default async function DashboardPage() {
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
               {photos.map((photo) => {
-                const nextRoute = photo.enhanced_url
-                  ? `/preview/${photo.id}`
-                  : photo.cropped_url
-                    ? `/enhance/${photo.id}`
-                    : `/crop/${photo.id}`
+                // Determinar la ruta siguiente basada en el estado del procesamiento
+                const nextRoute = photo.topaz_gigapixel_url
+                  ? `/topaz-comparison/${photo.id}` // Si ya tiene Topaz, ir a comparación
+                  : photo.enhanced_url
+                    ? `/preview/${photo.id}`
+                    : photo.cropped_url
+                      ? photo.topaz_status === "processing" || photo.topaz_status === "pending"
+                        ? `/topaz-comparison/${photo.id}` // Si está procesando, ir a comparación
+                        : `/enhance/${photo.id}`
+                      : `/crop/${photo.id}`
 
-                const statusText = photo.enhanced_url ? "Completada" : photo.cropped_url ? "Recortada" : "Sin recortar"
+                // Determinar el texto de estado y color
+                let statusText = "Sin recortar"
+                let statusColor = "slate"
+                
+                if (photo.topaz_gigapixel_url) {
+                  statusText = "Mejorada con Topaz"
+                  statusColor = "green"
+                } else if (photo.topaz_status === "processing") {
+                  statusText = "Procesando Topaz..."
+                  statusColor = "blue"
+                } else if (photo.topaz_status === "pending") {
+                  statusText = "Pendiente Topaz"
+                  statusColor = "yellow"
+                } else if (photo.enhanced_url) {
+                  statusText = "Completada"
+                  statusColor = "slate"
+                } else if (photo.cropped_url) {
+                  statusText = "Recortada"
+                  statusColor = "slate"
+                }
 
-                return <PhotoCard key={photo.id} photo={photo} nextRoute={nextRoute} statusText={statusText} />
+                return (
+                  <PhotoCard
+                    key={photo.id}
+                    photo={photo}
+                    nextRoute={nextRoute}
+                    statusText={statusText}
+                    statusColor={statusColor}
+                  />
+                )
               })}
             </div>
           )}

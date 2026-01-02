@@ -50,3 +50,13 @@ export async function getSignedImageUrls(
   return urls
 }
 
+/**
+ * Get proxy URL for an image (useful for canvas operations that require CORS)
+ * @param filePath - The path to the file in storage
+ * @returns The proxy URL
+ */
+export function getProxyImageUrl(filePath: string | null | undefined): string | null {
+  if (!filePath) return null
+  return `/api/proxy-image?path=${encodeURIComponent(filePath)}`
+}
+

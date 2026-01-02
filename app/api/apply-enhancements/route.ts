@@ -2,13 +2,22 @@ import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { inngest } from "@/inngest/client"
 
+interface EnhancementParams {
+  brightness: number // -100 to 100
+  contrast: number // -100 to 100
+  saturation: number // -100 to 100
+  sharpness: number // 0 to 100
+  vibrance: number // -100 to 100
+  temperature: number // -100 to 100
+}
+
 export async function POST(req: NextRequest) {
   try {
-    const { imageUrl, photoId } = await req.json()
+    const { photoId, adjustments } = await req.json()
 
-    if (!imageUrl || !photoId) {
+    if (!photoId || !adjustments) {
       return NextResponse.json(
-        { error: "imageUrl and photoId are required" },
+        { error: "photoId and adjustments are required" },
         { status: 400 }
       )
     }
@@ -24,10 +33,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 })
     }
 
-    // Verificar que la foto pertenece al usuario
+    // Obtener la foto con topaz_gigapixel_url
     const { data: photo, error: photoError } = await supabase
       .from("photos")
-      .select("user_id")
+      .select("user_id, topaz_gigapixel_url, topaz_status")
       .eq("id", photoId)
       .single()
 
@@ -35,27 +44,36 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Photo not found" }, { status: 404 })
     }
 
-    // Enviar evento a Inngest para analizar en cola
+    // Verificar que la imagen de Topaz esté disponible
+    if (!photo.topaz_gigapixel_url || photo.topaz_status !== "completed") {
+      return NextResponse.json(
+        { error: "La imagen debe estar procesada por Topaz antes de aplicar ajustes" },
+        { status: 400 }
+      )
+    }
+
+    // Enviar evento a Inngest para aplicar ajustes en cola
     await inngest.send({
-      name: "ai/analyze-image",
+      name: "image/apply-enhancements",
       data: {
         photoId,
-        imageUrl,
+        adjustments,
       },
     })
 
     return NextResponse.json({
       success: true,
-      message: "Image analysis queued, recommendations will be available shortly",
+      message: "Enhancements queued, processing in background",
     })
   } catch (error) {
-    console.error("Error queuing image analysis:", error)
+    console.error("Error applying enhancements:", error)
     return NextResponse.json(
       {
-        error: "Failed to queue image analysis",
+        error: "Failed to apply enhancements",
         details: error instanceof Error ? error.message : "Unknown error",
       },
       { status: 500 }
     )
   }
 }
+

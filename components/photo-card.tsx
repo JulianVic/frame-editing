@@ -11,26 +11,31 @@ interface PhotoCardProps {
     original_url: string | null
     cropped_url: string | null
     enhanced_url: string | null
+    topaz_gigapixel_url: string | null
+    topaz_status: string | null
     aspect_ratio: string | null
     created_at: string
   }
   nextRoute: string
   statusText: string
+  statusColor?: "slate" | "green" | "blue" | "yellow"
 }
 
-export function PhotoCard({ photo, nextRoute, statusText }: PhotoCardProps) {
+export function PhotoCard({ photo, nextRoute, statusText, statusColor = "slate" }: PhotoCardProps) {
   const [imageUrl, setImageUrl] = useState<string | null>(null)
 
   useEffect(() => {
     const loadImage = async () => {
-      const imagePath = photo.enhanced_url || photo.cropped_url || photo.original_url
+      // Priorizar mostrar la imagen mejorada por Topaz si está disponible
+      const imagePath =
+        photo.topaz_gigapixel_url || photo.enhanced_url || photo.cropped_url || photo.original_url
       const signedUrl = await getSignedImageUrl(imagePath)
       if (signedUrl) {
         setImageUrl(signedUrl)
       }
     }
     loadImage()
-  }, [photo.enhanced_url, photo.cropped_url, photo.original_url])
+  }, [photo.topaz_gigapixel_url, photo.enhanced_url, photo.cropped_url, photo.original_url])
 
   return (
     <Link
@@ -50,7 +55,17 @@ export function PhotoCard({ photo, nextRoute, statusText }: PhotoCardProps) {
           <p className="text-sm text-slate-600">
             {new Date(photo.created_at).toLocaleDateString("es-ES")}
           </p>
-          <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded">
+          <span
+            className={`text-xs font-medium px-2 py-1 rounded ${
+              statusColor === "green"
+                ? "text-green-700 bg-green-100"
+                : statusColor === "blue"
+                  ? "text-blue-700 bg-blue-100"
+                  : statusColor === "yellow"
+                    ? "text-yellow-700 bg-yellow-100"
+                    : "text-slate-500 bg-slate-100"
+            }`}
+          >
             {statusText}
           </span>
         </div>
