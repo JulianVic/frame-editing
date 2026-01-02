@@ -1,4 +1,4 @@
-import { generateObject } from "ai"
+import { generateText, Output } from "ai"
 import { z } from "zod"
 
 const imageAnalysisSchema = z.object({
@@ -19,9 +19,11 @@ export async function POST(req: Request) {
       return Response.json({ error: "Image URL is required" }, { status: 400 })
     }
 
-    const { object } = await generateObject({
+    const { output } = await generateText({
       model: "anthropic/claude-sonnet-4.5",
-      schema: imageAnalysisSchema,
+      output: Output.object({
+        schema: imageAnalysisSchema,
+      }),
       messages: [
         {
           role: "user",
@@ -41,7 +43,7 @@ export async function POST(req: Request) {
     })
 
     return Response.json({
-      recommendations: object,
+      recommendations: output,
       usage: "success",
     })
   } catch (error) {

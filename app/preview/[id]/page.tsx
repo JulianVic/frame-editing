@@ -6,11 +6,13 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft, Download, ImageIcon, Loader2, FileDown } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { getSignedImageUrl } from "@/lib/supabase/images"
 import Link from "next/link"
 
 export default function PreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
   const [photo, setPhoto] = useState<any>(null)
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const canvasRef = useRef<HTMLCanvasElement>(null)
@@ -27,6 +29,15 @@ export default function PreviewPage({ params }: { params: Promise<{ id: string }
 
       if (error) throw error
       setPhoto(data)
+
+      // Get signed URL for the image
+      const imagePath = data.enhanced_url || data.cropped_url || data.original_url
+      const signedUrl = await getSignedImageUrl(imagePath)
+      if (signedUrl) {
+        setImageUrl(signedUrl)
+      } else {
+        setError("Error al cargar la imagen")
+      }
     } catch (err) {
       setError("Error al cargar la foto")
     }
@@ -58,7 +69,7 @@ export default function PreviewPage({ params }: { params: Promise<{ id: string }
       await new Promise((resolve, reject) => {
         img.onload = resolve
         img.onerror = reject
-        img.src = photo.enhanced_url || photo.cropped_url || photo.original_url
+        img.src = imageUrl || "/placeholder.svg"
       })
 
       // Calculate frame sizes in pixels (at 300 DPI: 1 cm = 118.11 pixels)
@@ -136,10 +147,8 @@ export default function PreviewPage({ params }: { params: Promise<{ id: string }
     )
   }
 
-  const imageUrl = photo.enhanced_url || photo.cropped_url || photo.original_url
-
   return (
-    <div className="min-h-svh bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-svh bg-linear-to-br from-slate-50 to-slate-100">
       <header className="border-b bg-white/80 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -167,7 +176,7 @@ export default function PreviewPage({ params }: { params: Promise<{ id: string }
             <CardContent className="space-y-6">
               <div className="grid md:grid-cols-3 gap-6">
                 <div className="space-y-3">
-                  <div className="aspect-[3/2] border-4 border-slate-800 rounded-lg overflow-hidden bg-white p-2">
+                  <div className="aspect-3/2 border-4 border-slate-800 rounded-lg overflow-hidden bg-white p-2">
                     <img src={imageUrl || "/placeholder.svg"} alt="120x80cm" className="w-full h-full object-cover" />
                   </div>
                   <div className="text-center">
@@ -177,7 +186,7 @@ export default function PreviewPage({ params }: { params: Promise<{ id: string }
                 </div>
 
                 <div className="space-y-3">
-                  <div className="aspect-[3/2] border-4 border-slate-800 rounded-lg overflow-hidden bg-white p-2">
+                  <div className="aspect-3/2 border-4 border-slate-800 rounded-lg overflow-hidden bg-white p-2">
                     <img src={imageUrl || "/placeholder.svg"} alt="90x60cm" className="w-full h-full object-cover" />
                   </div>
                   <div className="text-center">
@@ -187,7 +196,7 @@ export default function PreviewPage({ params }: { params: Promise<{ id: string }
                 </div>
 
                 <div className="space-y-3">
-                  <div className="aspect-[3/2] border-4 border-slate-800 rounded-lg overflow-hidden bg-white p-2">
+                  <div className="aspect-3/2 border-4 border-slate-800 rounded-lg overflow-hidden bg-white p-2">
                     <img src={imageUrl || "/placeholder.svg"} alt="60x40cm" className="w-full h-full object-cover" />
                   </div>
                   <div className="text-center">

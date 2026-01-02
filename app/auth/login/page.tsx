@@ -28,9 +28,6 @@ export default function LoginPage() {
       const { error } = await supabase.auth.signInWithPassword({
         email,
         password,
-        options: {
-          emailRedirectTo: process.env.NEXT_PUBLIC_DEV_SUPABASE_REDIRECT_URL || `${window.location.origin}/dashboard`,
-        },
       })
       if (error) throw error
       router.push("/dashboard")
@@ -42,7 +39,7 @@ export default function LoginPage() {
   }
 
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10 bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10 bg-linear-to-br from-slate-50 to-slate-100">
       <div className="w-full max-w-sm">
         <div className="flex flex-col gap-6">
           <div className="text-center mb-4">
