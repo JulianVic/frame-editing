@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation"
 import { createClient } from "@/lib/supabase/server"
 import { Button } from "@/components/ui/button"
+import { PhotoCard } from "@/components/photo-card"
 import Link from "next/link"
-import { ImageIcon, Upload, ArrowRight } from "lucide-react"
+import { ImageIcon, Upload } from "lucide-react"
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -20,7 +21,7 @@ export default async function DashboardPage() {
     .order("created_at", { ascending: false })
 
   return (
-    <div className="min-h-svh bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-svh bg-linear-to-br from-slate-50 to-slate-100">
       <header className="border-b bg-white/80 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -69,39 +70,7 @@ export default async function DashboardPage() {
 
                 const statusText = photo.enhanced_url ? "Completada" : photo.cropped_url ? "Recortada" : "Sin recortar"
 
-                return (
-                  <Link
-                    key={photo.id}
-                    href={nextRoute}
-                    className="bg-white rounded-lg overflow-hidden shadow-sm hover:shadow-md transition-shadow group"
-                  >
-                    <div className="aspect-[3/2] bg-slate-100 relative">
-                      {(photo.enhanced_url || photo.cropped_url || photo.original_url) && (
-                        <img
-                          src={photo.enhanced_url || photo.cropped_url || photo.original_url}
-                          alt="Foto"
-                          className="w-full h-full object-cover"
-                        />
-                      )}
-                      <div className="absolute inset-0 bg-black/0 group-hover:bg-black/40 transition-colors flex items-center justify-center">
-                        <ArrowRight className="w-8 h-8 text-white opacity-0 group-hover:opacity-100 transition-opacity" />
-                      </div>
-                    </div>
-                    <div className="p-4">
-                      <div className="flex items-center justify-between">
-                        <p className="text-sm text-slate-600">
-                          {new Date(photo.created_at).toLocaleDateString("es-ES")}
-                        </p>
-                        <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded">
-                          {statusText}
-                        </span>
-                      </div>
-                      {photo.aspect_ratio && (
-                        <p className="text-xs text-slate-500 mt-1">Proporción: {photo.aspect_ratio}</p>
-                      )}
-                    </div>
-                  </Link>
-                )
+                return <PhotoCard key={photo.id} photo={photo} nextRoute={nextRoute} statusText={statusText} />
               })}
             </div>
           )}

@@ -10,7 +10,7 @@ export default async function ErrorPage({
   const params = await searchParams
 
   return (
-    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10 bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="flex min-h-svh w-full items-center justify-center p-6 md:p-10 bg-linear-to-br from-slate-50 to-slate-100">
       <div className="w-full max-w-sm">
         <div className="flex flex-col gap-6">
           <Card>

@@ -65,17 +65,13 @@ export default function UploadPage() {
 
       if (uploadError) throw uploadError
 
-      // Get public URL
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("photos").getPublicUrl(fileName)
-
+      // Store only the file path, not the full URL
       // Create photo record in database
       const { data: photoData, error: dbError } = await supabase
         .from("photos")
         .insert({
           user_id: user.id,
-          original_url: publicUrl,
+          original_url: fileName, // Store path instead of URL
         })
         .select()
         .single()
@@ -92,7 +88,7 @@ export default function UploadPage() {
   }
 
   return (
-    <div className="min-h-svh bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-svh bg-linear-to-br from-slate-50 to-slate-100">
       <header className="border-b bg-white/80 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">

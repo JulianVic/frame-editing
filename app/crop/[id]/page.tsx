@@ -10,12 +10,14 @@ import { Label } from "@/components/ui/label"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
 import { ArrowLeft, Crop, ImageIcon } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { getSignedImageUrl } from "@/lib/supabase/images"
 import Link from "next/link"
 import ReactCrop, { type Crop as CropType } from "react-image-crop"
 import "react-image-crop/dist/ReactCrop.css"
 
 export default function CropPage({ params }: { params: { id: string } }) {
   const [photo, setPhoto] = useState<any>(null)
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [aspectRatio, setAspectRatio] = useState<"3:2" | "2:3">("3:2")
   const [crop, setCrop] = useState<CropType>()
   const [completedCrop, setCompletedCrop] = useState<CropType>()
@@ -35,6 +37,14 @@ export default function CropPage({ params }: { params: { id: string } }) {
 
       if (error) throw error
       setPhoto(data)
+
+      // Get signed URL for the image
+      const signedUrl = await getSignedImageUrl(data.original_url)
+      if (signedUrl) {
+        setImageUrl(signedUrl)
+      } else {
+        setError("Error al cargar la imagen")
+      }
     } catch (err) {
       setError("Error al cargar la foto")
     }
@@ -145,15 +155,12 @@ export default function CropPage({ params }: { params: { id: string } }) {
 
       if (uploadError) throw uploadError
 
-      const {
-        data: { publicUrl },
-      } = supabase.storage.from("photos").getPublicUrl(fileName)
-
+      // Store only the file path, not the full URL
       // Update photo record
       const { error: updateError } = await supabase
         .from("photos")
         .update({
-          cropped_url: publicUrl,
+          cropped_url: fileName, // Store path instead of URL
           aspect_ratio: aspectRatio,
         })
         .eq("id", params.id)
@@ -236,7 +243,7 @@ export default function CropPage({ params }: { params: { id: string } }) {
                 >
                   <img
                     ref={imgRef}
-                    src={photo.original_url || "/placeholder.svg"}
+                    src={imageUrl || "/placeholder.svg"}
                     alt="Original"
                     onLoad={onImageLoad}
                     className="max-w-full"

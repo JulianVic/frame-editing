@@ -4,7 +4,7 @@ import { ImageIcon, Sparkles, Frame, FileDown } from "lucide-react"
 
 export default function HomePage() {
   return (
-    <div className="min-h-svh bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-svh bg-linear-to-br from-slate-50 to-slate-100">
       <header className="border-b bg-white/80 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">

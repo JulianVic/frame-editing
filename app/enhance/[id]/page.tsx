@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ArrowLeft, Sparkles, ImageIcon, Loader2 } from "lucide-react"
 import { createClient } from "@/lib/supabase/client"
+import { getSignedImageUrl } from "@/lib/supabase/images"
 import Link from "next/link"
 import { Slider } from "@/components/ui/slider"
 import { Label } from "@/components/ui/label"
@@ -23,6 +24,7 @@ interface ImageRecommendations {
 export default function EnhancePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
   const [photo, setPhoto] = useState<any>(null)
+  const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [recommendations, setRecommendations] = useState<ImageRecommendations | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [isApplying, setIsApplying] = useState(false)
@@ -49,11 +51,21 @@ export default function EnhancePage({ params }: { params: Promise<{ id: string }
       if (error) throw error
       setPhoto(data)
 
+      // Get signed URL for the image
+      const imagePath = data.cropped_url || data.original_url
+      const signedUrl = await getSignedImageUrl(imagePath)
+      if (signedUrl) {
+        setImageUrl(signedUrl)
+      } else {
+        setError("Error al cargar la imagen")
+        return
+      }
+
       if (data.ai_recommendations) {
         setRecommendations(data.ai_recommendations)
         setAdjustments(data.ai_recommendations)
       } else {
-        analyzeImage(data.cropped_url || data.original_url)
+        analyzeImage(signedUrl)
       }
     } catch (err) {
       setError("Error al cargar la foto")
@@ -96,10 +108,11 @@ export default function EnhancePage({ params }: { params: Promise<{ id: string }
 
       // In a real app, you would apply the adjustments to the image here
       // For now, we'll just mark it as enhanced and continue to PDF generation
+      // Store the path of the cropped or original image
       const { error: updateError } = await supabase
         .from("photos")
         .update({
-          enhanced_url: photo.cropped_url || photo.original_url,
+          enhanced_url: photo.cropped_url || photo.original_url, // Store path, not URL
           ai_recommendations: adjustments,
         })
         .eq("id", resolvedParams.id)
@@ -129,7 +142,7 @@ export default function EnhancePage({ params }: { params: Promise<{ id: string }
   }
 
   return (
-    <div className="min-h-svh bg-gradient-to-br from-slate-50 to-slate-100">
+    <div className="min-h-svh bg-linear-to-br from-slate-50 to-slate-100">
       <header className="border-b bg-white/80 backdrop-blur-sm">
         <div className="container mx-auto px-4 py-4 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -156,7 +169,7 @@ export default function EnhancePage({ params }: { params: Promise<{ id: string }
               <CardContent>
                 <div className="border rounded-lg overflow-hidden bg-slate-100">
                   <img
-                    src={photo.cropped_url || photo.original_url || "/placeholder.svg"}
+                    src={imageUrl || "/placeholder.svg"}
                     alt="Preview"
                     style={getFilterStyle()}
                     className="w-full h-auto"
