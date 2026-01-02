@@ -76,4 +76,3 @@ export function PhotoCard({ photo, nextRoute, statusText, statusColor = "slate" 
     </Link>
   )
 }
-

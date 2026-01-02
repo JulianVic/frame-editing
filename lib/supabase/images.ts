@@ -59,4 +59,3 @@ export function getProxyImageUrl(filePath: string | null | undefined): string | 
   if (!filePath) return null
   return `/api/proxy-image?path=${encodeURIComponent(filePath)}`
 }
-
