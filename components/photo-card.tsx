@@ -61,4 +61,3 @@ export function PhotoCard({ photo, nextRoute, statusText }: PhotoCardProps) {
     </Link>
   )
 }
-
