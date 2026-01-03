@@ -180,13 +180,39 @@ export default function EnhancePage({ params }: { params: Promise<{ id: string }
         throw new Error(errorData.error || "Error al aplicar mejoras")
       }
 
-      const result = await response.json()
+      // Polling para esperar a que enhanced_url esté disponible
+      const checkEnhancedUrl = async (): Promise<boolean> => {
+        const { data } = await supabase
+          .from("photos")
+          .select("enhanced_url")
+          .eq("id", resolvedParams.id)
+          .single()
 
-      // Redirigir a preview
-      router.push(`/preview/${resolvedParams.id}`)
+        return !!data?.enhanced_url
+      }
+
+      // Verificar inmediatamente
+      if (await checkEnhancedUrl()) {
+        router.push(`/preview/${resolvedParams.id}`)
+        return
+      }
+
+      // Polling cada 2 segundos hasta que esté listo (máximo 60 segundos)
+      let attempts = 0
+      const maxAttempts = 30
+      const pollInterval = setInterval(async () => {
+        attempts++
+        if (await checkEnhancedUrl()) {
+          clearInterval(pollInterval)
+          router.push(`/preview/${resolvedParams.id}`)
+        } else if (attempts >= maxAttempts) {
+          clearInterval(pollInterval)
+          setError("El procesamiento está tardando más de lo esperado. Por favor, recarga la página o intenta de nuevo.")
+          setIsApplying(false)
+        }
+      }, 2000)
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al aplicar mejoras")
-    } finally {
       setIsApplying(false)
     }
   }
@@ -542,9 +568,23 @@ export default function EnhancePage({ params }: { params: Promise<{ id: string }
                     {error && <p className="text-sm text-red-500">{error}</p>}
 
                     <Button onClick={applyEnhancements} disabled={isApplying} className="w-full" size="lg">
-                      <Sparkles className="w-4 h-4 mr-2" />
-                      {isApplying ? "Aplicando..." : "Aplicar y Continuar"}
+                      {isApplying ? (
+                        <>
+                          <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                          Procesando imagen...
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles className="w-4 h-4 mr-2" />
+                          Aplicar y Continuar
+                        </>
+                      )}
                     </Button>
+                    {isApplying && (
+                      <p className="text-sm text-muted-foreground text-center">
+                        Los ajustes se están aplicando a la imagen. Esto puede tomar unos segundos...
+                      </p>
+                    )}
                   </>
                 )}
               </CardContent>

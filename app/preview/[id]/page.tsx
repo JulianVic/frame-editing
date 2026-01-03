@@ -205,85 +205,50 @@ export default function PreviewPage({ params }: { params: Promise<{ id: string }
         <div className="max-w-6xl mx-auto">
           <Card className="mb-8">
             <CardHeader>
-              <CardTitle className="text-2xl">Vista Previa de Marcos</CardTitle>
+              <CardTitle className="text-2xl">Vista Comparativa</CardTitle>
               <CardDescription>
                 Visualiza tu foto en diferentes tamaños de marco: 120×80cm, 90×60cm y 60×40cm
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              <div className="grid md:grid-cols-3 gap-6">
-                <div className="space-y-3">
-                  <div className="aspect-3/2 border-4 border-slate-800 rounded-lg overflow-hidden bg-white p-2">
-                    <img src={imageUrl || "/placeholder.svg"} alt="120x80cm" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="text-center">
-                    <p className="font-semibold">Marco Grande</p>
-                    <p className="text-sm text-slate-600">120cm × 80cm</p>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="aspect-3/2 border-4 border-slate-800 rounded-lg overflow-hidden bg-white p-2">
-                    <img src={imageUrl || "/placeholder.svg"} alt="90x60cm" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="text-center">
-                    <p className="font-semibold">Marco Mediano</p>
-                    <p className="text-sm text-slate-600">90cm × 60cm</p>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <div className="aspect-3/2 border-4 border-slate-800 rounded-lg overflow-hidden bg-white p-2">
-                    <img src={imageUrl || "/placeholder.svg"} alt="60x40cm" className="w-full h-full object-cover" />
-                  </div>
-                  <div className="text-center">
-                    <p className="font-semibold">Marco Pequeño</p>
-                    <p className="text-sm text-slate-600">60cm × 40cm</p>
-                  </div>
-                </div>
-              </div>
-
-              <div className="border-t pt-6">
-                <h3 className="text-lg font-semibold mb-4">Vista Comparativa</h3>
-                <div className="bg-white p-8 rounded-lg border-2 border-slate-200">
-                  <div className="relative mx-auto" style={{ maxWidth: "900px" }}>
-                    {/* Contenedor principal con relación 3:2 */}
-                    <div className="relative" style={{ aspectRatio: "3/2" }}>
-                      {/* Cuadro exterior: 120x80cm */}
-                      <div className="absolute inset-0 border-2 border-slate-800 rounded-sm flex items-center justify-center">
-                        <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded text-xs font-semibold text-slate-800 shadow-sm">
-                          120×80cm
+              <div className="bg-white p-8 rounded-lg border-2 border-slate-200">
+                <div className="relative mx-auto" style={{ maxWidth: "900px" }}>
+                  {/* Contenedor principal con relación 3:2 */}
+                  <div className="relative" style={{ aspectRatio: "3/2" }}>
+                    {/* Cuadro exterior: 120x80cm */}
+                    <div className="absolute inset-0 border-2 border-slate-800 rounded-sm flex items-center justify-center">
+                      <div className="absolute top-2 left-2 bg-white px-2 py-1 rounded text-xs font-semibold text-slate-800 shadow-sm">
+                        120×80cm
+                      </div>
+                      
+                      {/* Cuadro medio: 90x60cm (75% del tamaño del exterior) */}
+                      <div className="relative border-2 border-slate-700 rounded-sm" style={{ width: "75%", height: "75%", aspectRatio: "3/2" }}>
+                        <div className="absolute top-1 left-1 bg-white px-2 py-0.5 rounded text-xs font-semibold text-slate-700 shadow-sm">
+                          90×60cm
                         </div>
                         
-                        {/* Cuadro medio: 90x60cm (75% del tamaño del exterior) */}
-                        <div className="relative border-2 border-slate-700 rounded-sm" style={{ width: "75%", height: "75%", aspectRatio: "3/2" }}>
-                          <div className="absolute top-1 left-1 bg-white px-2 py-0.5 rounded text-xs font-semibold text-slate-700 shadow-sm">
-                            90×60cm
+                        {/* Imagen dentro del cuadro de 90x60cm */}
+                        <div className="absolute inset-0 overflow-hidden rounded-sm" style={{ margin: "2px" }}>
+                          <img
+                            src={imageUrl || "/placeholder.svg"}
+                            alt="90x60cm frame"
+                            className="w-full h-full object-cover"
+                          />
+                        </div>
+                        
+                        {/* Cuadro interior: 60x40cm (66.67% del tamaño del medio, centrado) */}
+                        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 border-2 border-slate-600 rounded-sm" style={{ width: "66.67%", height: "66.67%", aspectRatio: "3/2" }}>
+                          <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white px-1.5 py-0.5 rounded text-xs font-semibold text-slate-600 shadow-sm whitespace-nowrap">
+                            60×40cm
                           </div>
                           
-                          {/* Imagen dentro del cuadro de 90x60cm */}
+                          {/* Imagen dentro del cuadro de 60x40cm (sobrepuesta) */}
                           <div className="absolute inset-0 overflow-hidden rounded-sm" style={{ margin: "2px" }}>
                             <img
                               src={imageUrl || "/placeholder.svg"}
-                              alt="90x60cm frame"
+                              alt="60x40cm frame"
                               className="w-full h-full object-cover"
                             />
-                          </div>
-                          
-                          {/* Cuadro interior: 60x40cm (66.67% del tamaño del medio, centrado) */}
-                          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 border-2 border-slate-600 rounded-sm" style={{ width: "66.67%", height: "66.67%", aspectRatio: "3/2" }}>
-                            <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-white px-1.5 py-0.5 rounded text-xs font-semibold text-slate-600 shadow-sm whitespace-nowrap">
-                              60×40cm
-                            </div>
-                            
-                            {/* Imagen dentro del cuadro de 60x40cm (sobrepuesta) */}
-                            <div className="absolute inset-0 overflow-hidden rounded-sm" style={{ margin: "2px" }}>
-                              <img
-                                src={imageUrl || "/placeholder.svg"}
-                                alt="60x40cm frame"
-                                className="w-full h-full object-cover"
-                              />
-                            </div>
                           </div>
                         </div>
                       </div>
