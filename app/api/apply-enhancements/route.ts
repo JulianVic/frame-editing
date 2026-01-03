@@ -58,6 +58,7 @@ export async function POST(req: NextRequest) {
       data: {
         photoId,
         adjustments,
+        userId: user.id,
       },
     })
 

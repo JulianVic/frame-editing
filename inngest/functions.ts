@@ -1,16 +1,86 @@
 import { inngest } from "./client"
-import { createClient } from "@/lib/supabase/server"
+import { createClient } from "@supabase/supabase-js"
+
+/**
+ * Normaliza el path de la imagen, extrayendo solo la ruta del archivo
+ * si viene como URL completa de Supabase Storage
+ */
+function normalizeImagePath(imagePath: string): string {
+  // Si es una URL completa, extraer solo la ruta del archivo
+  if (imagePath.startsWith("http://") || imagePath.startsWith("https://")) {
+    try {
+      const url = new URL(imagePath)
+      // Extraer la ruta después de /object/photos/
+      const match = url.pathname.match(/\/object\/photos\/(.+)$/)
+      if (match) {
+        return decodeURIComponent(match[1])
+      }
+      // Si no coincide el patrón, intentar extraer después del último /
+      const pathParts = url.pathname.split("/")
+      const photosIndex = pathParts.indexOf("photos")
+      if (photosIndex !== -1 && pathParts[photosIndex + 1]) {
+        return pathParts.slice(photosIndex + 1).join("/")
+      }
+    } catch {
+      // Si falla el parsing, devolver el path original
+    }
+  }
+  
+  // Si ya es una ruta relativa, devolverla tal cual
+  // Remover cualquier prefijo de bucket si existe
+  return imagePath.replace(/^photos\//, "").replace(/^\/photos\//, "")
+}
 
 /**
  * Procesa una imagen con Topaz Gigapixel
  */
+/**
+ * Crea un cliente de Supabase para uso en Inngest (sin cookies)
+ * Usa el service role key si está disponible, o el anon key con el userId
+ */
+function createInngestSupabaseClient(userId?: string) {
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+  const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY
+  const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+
+  if (!supabaseUrl) {
+    throw new Error("[Inngest] NEXT_PUBLIC_SUPABASE_URL no está configurado")
+  }
+  
+  // Si tenemos service role key, usarlo (máximo privilegio)
+  if (supabaseServiceRoleKey) {
+    console.log("[Inngest] Usando SUPABASE_SERVICE_ROLE_KEY para acceso completo")
+    return createClient(supabaseUrl, supabaseServiceRoleKey, {
+      auth: {
+        autoRefreshToken: false,
+        persistSession: false,
+      },
+    })
+  }
+  
+  // Si no hay service role key, esto es un problema para buckets privados
+  console.warn("[Inngest] ⚠️ SUPABASE_SERVICE_ROLE_KEY no está configurado. Usando anon key - esto puede fallar con buckets privados")
+  
+  if (!supabaseAnonKey) {
+    throw new Error("[Inngest] NEXT_PUBLIC_SUPABASE_ANON_KEY no está configurado")
+  }
+  
+  return createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false,
+    },
+  })
+}
+
 export const processTopazGigapixel = inngest.createFunction(
   { id: "process-topaz-gigapixel" },
   { event: "topaz/process" },
   async ({ event, step }) => {
     const { jobId, imagePath, photoId, userId } = event.data
 
-    const supabase = await createClient()
+    // Crear cliente de Supabase para Inngest (sin cookies)
+    const supabase = createInngestSupabaseClient(userId)
     const topazApiKey = process.env.TOPAZ_API_KEY
 
     if (!topazApiKey) {
@@ -32,6 +102,10 @@ export const processTopazGigapixel = inngest.createFunction(
       return { success: false, error: "Topaz API key not configured" }
     }
 
+    // Normalizar el path de la imagen
+    const normalizedPath = normalizeImagePath(imagePath)
+    console.log(`[Inngest Topaz] Path original: ${imagePath}, Path normalizado: ${normalizedPath}`)
+
     // Actualizar estado a processing
     await step.run("update-status-processing", async () => {
       await supabase
@@ -48,16 +122,73 @@ export const processTopazGigapixel = inngest.createFunction(
         .eq("id", photoId)
     })
 
-    // Descargar imagen
+    // Descargar imagen usando signed URL (más confiable para buckets privados)
     const imageBlob = await step.run("download-image", async () => {
-      const { data, error } = await supabase.storage.from("photos").download(imagePath)
-      if (error || !data) {
-        throw new Error(`Failed to download image: ${error?.message}`)
+      console.log(`[Inngest Topaz] Intentando descargar imagen desde path: ${normalizedPath}`)
+      
+      // Primero verificar que el bucket existe listando los buckets
+      const { data: buckets, error: bucketsError } = await supabase.storage.listBuckets()
+      if (bucketsError) {
+        console.error(`[Inngest Topaz] Error listando buckets:`, bucketsError)
+        throw new Error(`Error listando buckets: ${bucketsError.message}`)
       }
-      // Supabase Storage devuelve un objeto con método arrayBuffer()
-      // Usar type assertion para acceder al método
-      const supabaseBlob = data as any as { arrayBuffer(): Promise<ArrayBuffer> }
-      const arrayBuffer = await supabaseBlob.arrayBuffer()
+      
+      const photosBucket = buckets?.find(b => b.name === "photos")
+      if (!photosBucket) {
+        console.error(`[Inngest Topaz] Bucket 'photos' no encontrado. Buckets disponibles:`, buckets?.map(b => b.name))
+        throw new Error(`Bucket 'photos' no existe. Buckets disponibles: ${buckets?.map(b => b.name).join(", ") || "ninguno"}`)
+      }
+      
+      console.log(`[Inngest Topaz] Bucket 'photos' encontrado, es público: ${photosBucket.public}`)
+      
+      // Para buckets privados, usar createSignedUrl y luego fetch
+      // Esto es más confiable que download() directo
+      const { data: signedUrlData, error: signedUrlError } = await supabase.storage
+        .from("photos")
+        .createSignedUrl(normalizedPath, 3600) // 1 hora de validez
+      
+      if (signedUrlError || !signedUrlData) {
+        console.error(`[Inngest Topaz] Error generando signed URL:`, {
+          path: normalizedPath,
+          originalPath: imagePath,
+          error: signedUrlError,
+          errorMessage: signedUrlError?.message,
+        })
+        
+        // Intentar listar archivos para verificar si el archivo existe
+        const pathParts = normalizedPath.split("/")
+        const folder = pathParts.slice(0, -1).join("/")
+        const { data: files, error: listError } = await supabase.storage
+          .from("photos")
+          .list(folder)
+        
+        if (listError) {
+          console.error(`[Inngest Topaz] Error listando archivos en ${folder}:`, listError)
+        } else {
+          console.log(`[Inngest Topaz] Archivos en ${folder}:`, files?.map(f => f.name))
+        }
+        
+        throw new Error(`Failed to create signed URL: ${signedUrlError?.message || "Unknown error"}`)
+      }
+      
+      console.log(`[Inngest Topaz] Signed URL generada exitosamente`)
+      
+      // Descargar usando fetch con la signed URL
+      const response = await fetch(signedUrlData.signedUrl)
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`[Inngest Topaz] Error descargando desde signed URL:`, {
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+          signedUrl: signedUrlData.signedUrl.substring(0, 100) + "...", // Solo mostrar parte de la URL
+        })
+        throw new Error(`Failed to download image: HTTP ${response.status} - ${response.statusText}`)
+      }
+      
+      const arrayBuffer = await response.arrayBuffer()
+      console.log(`[Inngest Topaz] Imagen descargada exitosamente, tamaño: ${arrayBuffer.byteLength} bytes`)
       return new Blob([arrayBuffer], { type: "image/jpeg" })
     })
 
@@ -160,9 +291,10 @@ export const analyzeImageWithAI = inngest.createFunction(
   { id: "analyze-image-ai" },
   { event: "ai/analyze-image" },
   async ({ event, step }) => {
-    const { photoId, imageUrl } = event.data
+    const { photoId, imageUrl, userId } = event.data
 
-    const supabase = await createClient()
+    // Crear cliente de Supabase para Inngest (sin cookies)
+    const supabase = createInngestSupabaseClient(userId)
 
     // Llamar a Gemini para análisis
     const recommendations = await step.run("call-gemini", async () => {
@@ -237,7 +369,9 @@ export const applyImageEnhancements = inngest.createFunction(
   async ({ event, step }) => {
     const { photoId, adjustments } = event.data
 
-    const supabase = await createClient()
+    // Crear cliente de Supabase para Inngest (sin cookies)
+    // Necesitamos obtener el userId de la foto
+    const supabase = createInngestSupabaseClient()
 
     // Obtener la foto y la imagen de Topaz
     const photo = await step.run("get-photo", async () => {
@@ -258,20 +392,45 @@ export const applyImageEnhancements = inngest.createFunction(
       return data
     })
 
-    // Descargar imagen
+    // Crear cliente de Supabase con el userId de la foto
+    const supabaseWithUser = createInngestSupabaseClient(photo.user_id)
+
+    // Descargar imagen usando signed URL (más confiable para buckets privados)
     const imageBlob = await step.run("download-image", async () => {
-      const { data, error } = await supabase.storage
+      // Normalizar el path de la imagen de Topaz
+      const normalizedPath = normalizeImagePath(photo.topaz_gigapixel_url)
+      console.log(`[Inngest Enhance] Path original: ${photo.topaz_gigapixel_url}, Path normalizado: ${normalizedPath}`)
+      
+      // Generar signed URL para descargar
+      const { data: signedUrlData, error: signedUrlError } = await supabaseWithUser.storage
         .from("photos")
-        .download(photo.topaz_gigapixel_url)
-
-      if (error || !data) {
-        throw new Error(`Failed to download image: ${error?.message}`)
+        .createSignedUrl(normalizedPath, 3600) // 1 hora de validez
+      
+      if (signedUrlError || !signedUrlData) {
+        console.error(`[Inngest Enhance] Error generando signed URL:`, {
+          path: normalizedPath,
+          error: signedUrlError,
+        })
+        throw new Error(`Failed to create signed URL: ${signedUrlError?.message || "Unknown error"}`)
       }
-
-      // Supabase Storage devuelve un objeto con método arrayBuffer()
-      // Usar type assertion para acceder al método
-      const supabaseBlob = data as any as { arrayBuffer(): Promise<ArrayBuffer> }
-      const arrayBuffer = await supabaseBlob.arrayBuffer()
+      
+      console.log(`[Inngest Enhance] Signed URL generada, descargando imagen...`)
+      
+      // Descargar usando fetch con la signed URL
+      const response = await fetch(signedUrlData.signedUrl)
+      
+      if (!response.ok) {
+        const errorText = await response.text()
+        console.error(`[Inngest Enhance] Error descargando desde signed URL:`, {
+          status: response.status,
+          statusText: response.statusText,
+          errorText,
+        })
+        throw new Error(`Failed to download image: HTTP ${response.status} - ${response.statusText}`)
+      }
+      
+      const arrayBuffer = await response.arrayBuffer()
+      console.log(`[Inngest Enhance] Imagen descargada exitosamente, tamaño: ${arrayBuffer.byteLength} bytes`)
       return new Blob([arrayBuffer], { type: "image/jpeg" })
     })
 
@@ -335,6 +494,7 @@ export const applyImageEnhancements = inngest.createFunction(
     // Subir imagen mejorada
     const enhancedFileName = await step.run("upload-enhanced-image", async () => {
       const fileName = `${photo.user_id}/enhanced_${Date.now()}.jpg`
+      // Usar el cliente con usuario para subir
       // enhancedBuffer es un Buffer de Node.js, convertirlo a Uint8Array para Supabase
       // Si es un Buffer real, usar directamente; si está serializado, reconstruirlo
       let uint8Array: Uint8Array
@@ -360,7 +520,7 @@ export const applyImageEnhancements = inngest.createFunction(
 
     // Actualizar registro de foto
     await step.run("update-photo", async () => {
-      await supabase
+      await supabaseWithUser
         .from("photos")
         .update({
           enhanced_url: enhancedFileName,
