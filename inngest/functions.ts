@@ -122,8 +122,8 @@ export const processTopazGigapixel = inngest.createFunction(
         .eq("id", photoId)
     })
 
-    // Descargar imagen y procesarla con Topaz (todo en un solo step para evitar serialización de Blobs)
-    const enhancedImageData = await step.run("download-and-process-topaz", async () => {
+    // Descargar, procesar con Topaz y subir (todo en un solo step para evitar serialización de datos grandes)
+    const enhancedFileName = await step.run("download-process-upload-topaz", async () => {
       console.log(`[Inngest Topaz] Intentando descargar imagen desde path: ${normalizedPath}`)
       
       // Primero verificar que el bucket existe listando los buckets
@@ -235,28 +235,23 @@ export const processTopazGigapixel = inngest.createFunction(
       const enhancedBlob = await enhanceResponse.blob()
       console.log(`[Inngest Topaz] Topaz Enhance completado, tamaño: ${enhancedBlob.size} bytes`)
 
-      // Convertir a array de números para serialización entre steps
-      const arrayBuffer = await enhancedBlob.arrayBuffer()
-      return Array.from(new Uint8Array(arrayBuffer))
-    })
-
-    // Subir imagen mejorada
-    const enhancedFileName = await step.run("upload-enhanced-image", async () => {
+      // Subir imagen mejorada a Supabase (en el mismo step para evitar serialización)
       const fileName = `${userId}/topaz_enhanced_${Date.now()}.jpg`
-      // enhancedImageData es un array de números, convertirlo a Uint8Array
-      const uint8Array = new Uint8Array(enhancedImageData)
+      const arrayBuffer = await enhancedBlob.arrayBuffer()
+      const uint8Array = new Uint8Array(arrayBuffer)
       console.log(`[Inngest Topaz] Subiendo imagen mejorada, tamaño: ${uint8Array.length} bytes`)
       
-      const { error } = await supabase.storage.from("photos").upload(fileName, uint8Array, {
+      const { error: uploadError } = await supabase.storage.from("photos").upload(fileName, uint8Array, {
         contentType: "image/jpeg",
         cacheControl: "3600",
         upsert: false,
       })
 
-      if (error) {
-        throw new Error(`Failed to upload: ${error.message}`)
+      if (uploadError) {
+        throw new Error(`Failed to upload: ${uploadError.message}`)
       }
 
+      console.log(`[Inngest Topaz] Imagen subida exitosamente: ${fileName}`)
       return fileName
     })
 
@@ -395,8 +390,8 @@ export const applyImageEnhancements = inngest.createFunction(
     // Crear cliente de Supabase con el userId de la foto
     const supabaseWithUser = createInngestSupabaseClient(photo.user_id)
 
-    // Descargar imagen y procesarla con sharp (todo en un solo step para evitar serialización de Blobs)
-    const enhancedImageData = await step.run("download-and-process-sharp", async () => {
+    // Descargar, procesar con sharp y subir (todo en un solo step para evitar serialización de datos grandes)
+    const enhancedFileName = await step.run("download-process-upload-sharp", async () => {
       // Normalizar el path de la imagen de Topaz
       const normalizedPath = normalizeImagePath(photo.topaz_gigapixel_url)
       console.log(`[Inngest Enhance] Path original: ${photo.topaz_gigapixel_url}, Path normalizado: ${normalizedPath}`)
@@ -486,27 +481,22 @@ export const applyImageEnhancements = inngest.createFunction(
       const resultBuffer = await imageProcessor.jpeg({ quality: 90, mozjpeg: true }).toBuffer()
       console.log(`[Inngest Enhance] Imagen procesada con sharp, tamaño: ${resultBuffer.length} bytes`)
       
-      // Convertir a array de números para serialización entre steps
-      return Array.from(new Uint8Array(resultBuffer))
-    })
-
-    // Subir imagen mejorada
-    const enhancedFileName = await step.run("upload-enhanced-image", async () => {
+      // Subir imagen mejorada a Supabase (en el mismo step para evitar serialización)
       const fileName = `${photo.user_id}/enhanced_${Date.now()}.jpg`
-      // enhancedImageData es un array de números, convertirlo a Uint8Array
-      const uint8Array = new Uint8Array(enhancedImageData)
+      const uint8Array = new Uint8Array(resultBuffer)
       console.log(`[Inngest Enhance] Subiendo imagen mejorada, tamaño: ${uint8Array.length} bytes`)
       
-      const { error } = await supabase.storage.from("photos").upload(fileName, uint8Array, {
+      const { error: uploadError } = await supabase.storage.from("photos").upload(fileName, uint8Array, {
         contentType: "image/jpeg",
         cacheControl: "3600",
         upsert: false,
       })
 
-      if (error) {
-        throw new Error(`Failed to upload: ${error.message}`)
+      if (uploadError) {
+        throw new Error(`Failed to upload: ${uploadError.message}`)
       }
 
+      console.log(`[Inngest Enhance] Imagen subida exitosamente: ${fileName}`)
       return fileName
     })
 
