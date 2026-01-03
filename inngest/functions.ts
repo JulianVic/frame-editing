@@ -122,8 +122,8 @@ export const processTopazGigapixel = inngest.createFunction(
         .eq("id", photoId)
     })
 
-    // Descargar imagen usando signed URL (más confiable para buckets privados)
-    const imageBlob = await step.run("download-image", async () => {
+    // Descargar imagen y procesarla con Topaz (todo en un solo step para evitar serialización de Blobs)
+    const enhancedImageData = await step.run("download-and-process-topaz", async () => {
       console.log(`[Inngest Topaz] Intentando descargar imagen desde path: ${normalizedPath}`)
       
       // Primero verificar que el bucket existe listando los buckets
@@ -142,7 +142,6 @@ export const processTopazGigapixel = inngest.createFunction(
       console.log(`[Inngest Topaz] Bucket 'photos' encontrado, es público: ${photosBucket.public}`)
       
       // Para buckets privados, usar createSignedUrl y luego fetch
-      // Esto es más confiable que download() directo
       const { data: signedUrlData, error: signedUrlError } = await supabase.storage
         .from("photos")
         .createSignedUrl(normalizedPath, 3600) // 1 hora de validez
@@ -173,80 +172,81 @@ export const processTopazGigapixel = inngest.createFunction(
       
       console.log(`[Inngest Topaz] Signed URL generada exitosamente`)
       
-      // Descargar usando fetch con la signed URL
-      const response = await fetch(signedUrlData.signedUrl)
+      // Descargar imagen original
+      const downloadResponse = await fetch(signedUrlData.signedUrl)
       
-      if (!response.ok) {
-        const errorText = await response.text()
+      if (!downloadResponse.ok) {
+        const errorText = await downloadResponse.text()
         console.error(`[Inngest Topaz] Error descargando desde signed URL:`, {
-          status: response.status,
-          statusText: response.statusText,
+          status: downloadResponse.status,
+          statusText: downloadResponse.statusText,
           errorText,
-          signedUrl: signedUrlData.signedUrl.substring(0, 100) + "...", // Solo mostrar parte de la URL
         })
-        throw new Error(`Failed to download image: HTTP ${response.status} - ${response.statusText}`)
+        throw new Error(`Failed to download image: HTTP ${downloadResponse.status} - ${downloadResponse.statusText}`)
       }
       
-      const arrayBuffer = await response.arrayBuffer()
-      console.log(`[Inngest Topaz] Imagen descargada exitosamente, tamaño: ${arrayBuffer.byteLength} bytes`)
-      return new Blob([arrayBuffer], { type: "image/jpeg" })
-    })
+      const originalBlob = await downloadResponse.blob()
+      console.log(`[Inngest Topaz] Imagen descargada exitosamente, tamaño: ${originalBlob.size} bytes`)
 
-    // Procesar con Topaz Sharpen
-    const sharpenedBlob = await step.run("topaz-sharpen", async () => {
-      const formData = new FormData()
-      // imageBlob ya es un Blob después del step anterior
-      formData.append("image", imageBlob as Blob, "image.jpg")
+      // Procesar con Topaz Sharpen
+      console.log(`[Inngest Topaz] Iniciando Topaz Sharpen...`)
+      const sharpenFormData = new FormData()
+      sharpenFormData.append("image", originalBlob, "image.jpg")
 
-      const response = await fetch("https://api.topazlabs.com/image/v1/sharpen", {
+      const sharpenResponse = await fetch("https://api.topazlabs.com/image/v1/sharpen", {
         method: "POST",
         headers: {
           "X-API-Key": topazApiKey,
           accept: "image/jpeg",
         },
-        body: formData,
+        body: sharpenFormData,
       })
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Topaz Sharpen error: ${response.statusText} - ${errorText}`)
+      if (!sharpenResponse.ok) {
+        const errorText = await sharpenResponse.text()
+        throw new Error(`Topaz Sharpen error: ${sharpenResponse.statusText} - ${errorText}`)
       }
 
-      return await response.blob()
-    })
+      const sharpenedBlob = await sharpenResponse.blob()
+      console.log(`[Inngest Topaz] Topaz Sharpen completado, tamaño: ${sharpenedBlob.size} bytes`)
 
-    // Procesar con Topaz Enhance
-    const enhancedBlob = await step.run("topaz-enhance", async () => {
-      const formData = new FormData()
-      // sharpenedBlob ya es un Blob después del step anterior
-      formData.append("image", sharpenedBlob as Blob, "image.jpg")
-      formData.append("output_width", "3840")
-      formData.append("crop_to_fill", "false")
-      formData.append("output_format", "jpeg")
+      // Procesar con Topaz Enhance
+      console.log(`[Inngest Topaz] Iniciando Topaz Enhance...`)
+      const enhanceFormData = new FormData()
+      enhanceFormData.append("image", sharpenedBlob, "image.jpg")
+      enhanceFormData.append("output_width", "3840")
+      enhanceFormData.append("crop_to_fill", "false")
+      enhanceFormData.append("output_format", "jpeg")
 
-      const response = await fetch("https://api.topazlabs.com/image/v1/enhance", {
+      const enhanceResponse = await fetch("https://api.topazlabs.com/image/v1/enhance", {
         method: "POST",
         headers: {
           "X-API-Key": topazApiKey,
           accept: "image/jpeg",
         },
-        body: formData,
+        body: enhanceFormData,
       })
 
-      if (!response.ok) {
-        const errorText = await response.text()
-        throw new Error(`Topaz Enhance error: ${response.statusText} - ${errorText}`)
+      if (!enhanceResponse.ok) {
+        const errorText = await enhanceResponse.text()
+        throw new Error(`Topaz Enhance error: ${enhanceResponse.statusText} - ${errorText}`)
       }
 
-      return await response.blob()
+      const enhancedBlob = await enhanceResponse.blob()
+      console.log(`[Inngest Topaz] Topaz Enhance completado, tamaño: ${enhancedBlob.size} bytes`)
+
+      // Convertir a array de números para serialización entre steps
+      const arrayBuffer = await enhancedBlob.arrayBuffer()
+      return Array.from(new Uint8Array(arrayBuffer))
     })
 
     // Subir imagen mejorada
     const enhancedFileName = await step.run("upload-enhanced-image", async () => {
       const fileName = `${userId}/topaz_enhanced_${Date.now()}.jpg`
-      // Convertir Blob a ArrayBuffer para Supabase
-      const arrayBuffer = await (enhancedBlob as Blob).arrayBuffer()
-      const uint8Array = new Uint8Array(arrayBuffer)
+      // enhancedImageData es un array de números, convertirlo a Uint8Array
+      const uint8Array = new Uint8Array(enhancedImageData)
+      console.log(`[Inngest Topaz] Subiendo imagen mejorada, tamaño: ${uint8Array.length} bytes`)
+      
       const { error } = await supabase.storage.from("photos").upload(fileName, uint8Array, {
         contentType: "image/jpeg",
         cacheControl: "3600",
@@ -395,8 +395,8 @@ export const applyImageEnhancements = inngest.createFunction(
     // Crear cliente de Supabase con el userId de la foto
     const supabaseWithUser = createInngestSupabaseClient(photo.user_id)
 
-    // Descargar imagen usando signed URL (más confiable para buckets privados)
-    const imageBlob = await step.run("download-image", async () => {
+    // Descargar imagen y procesarla con sharp (todo en un solo step para evitar serialización de Blobs)
+    const enhancedImageData = await step.run("download-and-process-sharp", async () => {
       // Normalizar el path de la imagen de Topaz
       const normalizedPath = normalizeImagePath(photo.topaz_gigapixel_url)
       console.log(`[Inngest Enhance] Path original: ${photo.topaz_gigapixel_url}, Path normalizado: ${normalizedPath}`)
@@ -431,14 +431,9 @@ export const applyImageEnhancements = inngest.createFunction(
       
       const arrayBuffer = await response.arrayBuffer()
       console.log(`[Inngest Enhance] Imagen descargada exitosamente, tamaño: ${arrayBuffer.byteLength} bytes`)
-      return new Blob([arrayBuffer], { type: "image/jpeg" })
-    })
 
-    // Procesar imagen con sharp
-    const enhancedBuffer = await step.run("process-with-sharp", async () => {
+      // Procesar imagen con sharp
       const sharp = (await import("sharp")).default
-      // imageBlob ya es un Blob después del step anterior
-      const arrayBuffer = await (imageBlob as Blob).arrayBuffer()
       const buffer = Buffer.from(arrayBuffer)
 
       let imageProcessor = sharp(buffer)
@@ -488,23 +483,20 @@ export const applyImageEnhancements = inngest.createFunction(
         ])
       }
 
-      return await imageProcessor.jpeg({ quality: 90, mozjpeg: true }).toBuffer()
+      const resultBuffer = await imageProcessor.jpeg({ quality: 90, mozjpeg: true }).toBuffer()
+      console.log(`[Inngest Enhance] Imagen procesada con sharp, tamaño: ${resultBuffer.length} bytes`)
+      
+      // Convertir a array de números para serialización entre steps
+      return Array.from(new Uint8Array(resultBuffer))
     })
 
     // Subir imagen mejorada
     const enhancedFileName = await step.run("upload-enhanced-image", async () => {
       const fileName = `${photo.user_id}/enhanced_${Date.now()}.jpg`
-      // Usar el cliente con usuario para subir
-      // enhancedBuffer es un Buffer de Node.js, convertirlo a Uint8Array para Supabase
-      // Si es un Buffer real, usar directamente; si está serializado, reconstruirlo
-      let uint8Array: Uint8Array
-      if (Buffer.isBuffer(enhancedBuffer)) {
-        uint8Array = new Uint8Array(enhancedBuffer.buffer, enhancedBuffer.byteOffset, enhancedBuffer.byteLength)
-      } else {
-        // Si está serializado (puede pasar en algunos entornos)
-        const buffer = Buffer.from(enhancedBuffer as unknown as ArrayLike<number>)
-        uint8Array = new Uint8Array(buffer)
-      }
+      // enhancedImageData es un array de números, convertirlo a Uint8Array
+      const uint8Array = new Uint8Array(enhancedImageData)
+      console.log(`[Inngest Enhance] Subiendo imagen mejorada, tamaño: ${uint8Array.length} bytes`)
+      
       const { error } = await supabase.storage.from("photos").upload(fileName, uint8Array, {
         contentType: "image/jpeg",
         cacheControl: "3600",
