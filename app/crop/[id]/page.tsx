@@ -13,12 +13,13 @@ import { getSignedImageUrl, getProxyImageUrl } from "@/lib/supabase/images"
 import Link from "next/link"
 import ReactCrop, { type Crop as CropType } from "react-image-crop"
 import "react-image-crop/dist/ReactCrop.css"
+import type { Photo } from "@/types"
 
 export default function CropPage({ params }: { params: Promise<{ id: string }> }) {
   const clientParams = useParams()
   const resolvedParams = use(params)
   const [photoId, setPhotoId] = useState<string | null>(null)
-  const [photo, setPhoto] = useState<any>(null)
+  const [photo, setPhoto] = useState<Photo | null>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   // Solo horizontal (3:2)
   const aspectRatio = 3 / 2

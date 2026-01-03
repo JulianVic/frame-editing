@@ -9,10 +9,11 @@ import { createClient } from "@/lib/supabase/client"
 import { getSignedImageUrl } from "@/lib/supabase/images"
 import Link from "next/link"
 import { jsPDF } from "jspdf"
+import type { Photo } from "@/types"
 
 export default function PreviewPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
-  const [photo, setPhoto] = useState<any>(null)
+  const [photo, setPhoto] = useState<Photo | null>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [isGenerating, setIsGenerating] = useState(false)
   const [error, setError] = useState<string | null>(null)

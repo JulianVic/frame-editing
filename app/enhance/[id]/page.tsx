@@ -10,20 +10,11 @@ import { getSignedImageUrl } from "@/lib/supabase/images"
 import Link from "next/link"
 import { Slider } from "@/components/ui/slider"
 import { Label } from "@/components/ui/label"
-
-interface ImageRecommendations {
-  brightness: number
-  contrast: number
-  saturation: number
-  sharpness: number
-  vibrance: number
-  temperature: number
-  explanation: string
-}
+import type { Photo, ImageRecommendations } from "@/types"
 
 export default function EnhancePage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
-  const [photo, setPhoto] = useState<any>(null)
+  const [photo, setPhoto] = useState<Photo | null>(null)
   const [imageUrl, setImageUrl] = useState<string | null>(null)
   const [recommendations, setRecommendations] = useState<ImageRecommendations | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
@@ -161,7 +152,7 @@ export default function EnhancePage({ params }: { params: Promise<{ id: string }
       }
 
       // Verificar que la imagen de Topaz esté disponible
-      if (!photo.topaz_gigapixel_url) {
+      if (!photo || !photo.topaz_gigapixel_url) {
         throw new Error("La imagen debe estar procesada por Topaz antes de aplicar ajustes")
       }
 

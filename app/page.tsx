@@ -10,7 +10,7 @@ export default function HomePage() {
           <div className="flex items-center gap-2">
             <ImageIcon className="w-6 h-6" />
             <h1 className="text-xl font-bold">FrameAI</h1>
-          </div>
+           </div>
           <div className="flex gap-2">
             <Button variant="ghost" asChild>
               <Link href="/auth/login">Iniciar Sesión</Link>

@@ -9,16 +9,17 @@ import { createClient } from "@/lib/supabase/client"
 import { getSignedImageUrl, getProxyImageUrl } from "@/lib/supabase/images"
 import { ImageComparisonSlider } from "@/components/image-comparison-slider"
 import Link from "next/link"
+import type { Photo, TopazStatus } from "@/types"
 
 export default function TopazComparisonPage({ params }: { params: Promise<{ id: string }> }) {
   const resolvedParams = use(params)
   const clientParams = useParams()
   const [photoId, setPhotoId] = useState<string | null>(null)
-  const [photo, setPhoto] = useState<any>(null)
+  const [photo, setPhoto] = useState<Photo | null>(null)
   const [jobId, setJobId] = useState<string | null>(null)
   const [originalUrl, setOriginalUrl] = useState<string | null>(null)
   const [topazUrl, setTopazUrl] = useState<string | null>(null)
-  const [jobStatus, setJobStatus] = useState<"pending" | "processing" | "completed" | "failed">("pending")
+  const [jobStatus, setJobStatus] = useState<TopazStatus>("pending")
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const router = useRouter()
